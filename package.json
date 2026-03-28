@@ -1,0 +1,20 @@
+{
+  "name": "mmm-voiceai",
+  "version": "1.0.0",
+  "description": "MagicMirror² voice assistant module using OpenAI (Whisper + GPT + TTS)",
+  "main": "MMM-VoiceAI.js",
+  "keywords": [
+    "MagicMirror",
+    "voice",
+    "openai",
+    "whisper",
+    "tts",
+    "gpt",
+    "assistant"
+  ],
+  "author": "Dan Dolewski",
+  "license": "MIT",
+  "dependencies": {
+    "form-data": "^4.0.0"
+  }
+}

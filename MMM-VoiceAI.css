@@ -1,0 +1,309 @@
+/* MMM-VoiceAI.css
+ * Orb-based voice assistant UI for MagicMirror²
+ * States: idle, listening_wake, recording, processing, speaking
+ */
+
+#VOICE_AI_WRAPPER {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  font-family: "Roboto Condensed", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  min-width: 280px;
+}
+
+/* ─── Orb ──────────────────────────────────────────────── */
+
+.vai-orb {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vai-orb-core {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #6ee7ff, #2196f3, #1565c0);
+  box-shadow: 0 0 20px rgba(33, 150, 243, 0.5);
+  transition: all 0.6s ease;
+  z-index: 2;
+}
+
+.vai-orb-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.5px solid rgba(100, 180, 255, 0.25);
+  transition: all 0.6s ease;
+}
+
+.vai-ring-outer {
+  width: 80px;
+  height: 80px;
+  animation: vai-rotate 8s linear infinite;
+}
+
+.vai-ring-inner {
+  width: 58px;
+  height: 58px;
+  animation: vai-rotate 5s linear infinite reverse;
+}
+
+/* ─── Waveform (hidden by default) ─────────────────────── */
+
+.vai-waveform {
+  position: absolute;
+  width: 100%;
+  height: 60%;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  z-index: 1;
+}
+
+.vai-wave {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.vai-wave-1 { stroke: rgba(100, 200, 255, 0.6); }
+.vai-wave-2 { stroke: rgba(100, 200, 255, 0.35); }
+.vai-wave-3 { stroke: rgba(100, 200, 255, 0.2); }
+
+/* ─── Status Label ─────────────────────────────────────── */
+
+.vai-status {
+  font-size: 14px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  transition: color 0.4s ease;
+  text-align: center;
+}
+
+/* ─── Transcript ───────────────────────────────────────── */
+
+.vai-transcript {
+  max-width: 350px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.vai-transcript-user,
+.vai-transcript-ai {
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.75);
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 3px solid transparent;
+  animation: vai-fadein 0.5s ease;
+}
+
+.vai-transcript-user {
+  border-left-color: rgba(100, 200, 255, 0.5);
+}
+
+.vai-transcript-ai {
+  border-left-color: rgba(100, 255, 180, 0.5);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.vai-label {
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  display: block;
+  margin-bottom: 4px;
+  opacity: 0.5;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   STATE: IDLE — dim and pulsing slowly
+   ══════════════════════════════════════════════════════════ */
+
+.state-idle .vai-orb-core {
+  background: radial-gradient(circle at 35% 35%, #4a5568, #2d3748, #1a202c);
+  box-shadow: 0 0 10px rgba(100, 100, 120, 0.3);
+}
+
+.state-idle .vai-orb-ring {
+  border-color: rgba(100, 100, 120, 0.15);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   STATE: LISTENING_WAKE — calm blue pulse
+   ══════════════════════════════════════════════════════════ */
+
+.state-listening_wake .vai-orb-core {
+  animation: vai-pulse-gentle 3s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   STATE: RECORDING — bright cyan, active waveform
+   ══════════════════════════════════════════════════════════ */
+
+.state-recording .vai-orb-core {
+  background: radial-gradient(circle at 35% 35%, #80ffdb, #00e5ff, #00b8d4);
+  box-shadow: 0 0 30px rgba(0, 229, 255, 0.6), 0 0 60px rgba(0, 229, 255, 0.2);
+  animation: vai-pulse-active 1s ease-in-out infinite;
+}
+
+.state-recording .vai-orb-ring {
+  border-color: rgba(0, 229, 255, 0.4);
+}
+
+.state-recording .vai-ring-outer {
+  width: 90px;
+  height: 90px;
+  animation: vai-rotate 3s linear infinite;
+}
+
+.state-recording .vai-ring-inner {
+  width: 68px;
+  height: 68px;
+  animation: vai-rotate 2s linear infinite reverse;
+}
+
+.state-recording .vai-waveform {
+  opacity: 1;
+}
+
+.state-recording .vai-wave {
+  animation: vai-wave-anim 0.8s ease-in-out infinite alternate;
+}
+
+.state-recording .vai-wave-2 { animation-delay: 0.15s; }
+.state-recording .vai-wave-3 { animation-delay: 0.3s; }
+
+.state-recording .vai-status {
+  color: rgba(0, 229, 255, 0.9);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   STATE: PROCESSING — amber, spinning faster
+   ══════════════════════════════════════════════════════════ */
+
+.state-processing .vai-orb-core {
+  background: radial-gradient(circle at 35% 35%, #ffd54f, #ff9800, #e65100);
+  box-shadow: 0 0 25px rgba(255, 152, 0, 0.5);
+  animation: vai-pulse-think 1.2s ease-in-out infinite;
+}
+
+.state-processing .vai-orb-ring {
+  border-color: rgba(255, 152, 0, 0.35);
+}
+
+.state-processing .vai-ring-outer {
+  animation: vai-rotate 2s linear infinite;
+}
+
+.state-processing .vai-ring-inner {
+  animation: vai-rotate 1.2s linear infinite reverse;
+}
+
+.state-processing .vai-status {
+  color: rgba(255, 183, 77, 0.9);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   STATE: SPEAKING — green, smooth waveform
+   ══════════════════════════════════════════════════════════ */
+
+.state-speaking .vai-orb-core {
+  background: radial-gradient(circle at 35% 35%, #a5d6a7, #4caf50, #2e7d32);
+  box-shadow: 0 0 25px rgba(76, 175, 80, 0.5);
+}
+
+.state-speaking .vai-orb-ring {
+  border-color: rgba(76, 175, 80, 0.35);
+}
+
+.state-speaking .vai-waveform {
+  opacity: 1;
+}
+
+.state-speaking .vai-wave {
+  animation: vai-wave-speak 1.2s ease-in-out infinite alternate;
+}
+
+.state-speaking .vai-wave-1 { stroke: rgba(100, 255, 180, 0.6); }
+.state-speaking .vai-wave-2 { stroke: rgba(100, 255, 180, 0.35); animation-delay: 0.2s; }
+.state-speaking .vai-wave-3 { stroke: rgba(100, 255, 180, 0.2); animation-delay: 0.4s; }
+
+.state-speaking .vai-status {
+  color: rgba(129, 199, 132, 0.9);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ANIMATIONS
+   ══════════════════════════════════════════════════════════ */
+
+@keyframes vai-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes vai-pulse-gentle {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(33, 150, 243, 0.35);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(33, 150, 243, 0.55);
+    transform: scale(1.06);
+  }
+}
+
+@keyframes vai-pulse-active {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 25px rgba(0, 229, 255, 0.5);
+  }
+  50% {
+    transform: scale(1.12);
+    box-shadow: 0 0 40px rgba(0, 229, 255, 0.7), 0 0 80px rgba(0, 229, 255, 0.2);
+  }
+}
+
+@keyframes vai-pulse-think {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    transform: scale(1.05) rotate(3deg);
+  }
+  75% {
+    transform: scale(0.97) rotate(-3deg);
+  }
+}
+
+@keyframes vai-wave-anim {
+  0%   { d: path("M0,30 Q50,10 100,30 T200,30"); }
+  100% { d: path("M0,30 Q50,50 100,30 T200,30"); }
+}
+
+@keyframes vai-wave-speak {
+  0%   { d: path("M0,30 Q50,20 100,30 T200,30"); }
+  100% { d: path("M0,30 Q50,40 100,30 T200,30"); }
+}
+
+@keyframes vai-fadein {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
