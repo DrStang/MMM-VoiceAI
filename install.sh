@@ -18,15 +18,32 @@ sudo apt-get install -y -qq \
   libsox-fmt-all \
   mpv \
   ffmpeg \
+  python3-pip \
+  python3-venv \
+  portaudio19-dev \
   2>/dev/null
 
-# ── Test microphone ──────────────────────────────
+# ── Python virtual environment + openWakeWord ────
 echo ""
-echo "→ Checking audio devices..."
-echo "  Playback devices:"
-aplay -l 2>/dev/null | grep "^card" || echo "  (none found)"
-echo "  Capture devices:"
-arecord -l 2>/dev/null | grep "^card" || echo "  (none found — you need a USB mic!)"
+echo "→ Setting up Python environment for openWakeWord..."
+
+VENV_DIR="$(pwd)/venv"
+if [ ! -d "$VENV_DIR" ]; then
+  python3 -m venv "$VENV_DIR"
+fi
+
+source "$VENV_DIR/bin/activate"
+
+echo "→ Installing openWakeWord and dependencies..."
+pip install --upgrade pip setuptools wheel 2>/dev/null
+pip install openwakeword numpy 2>/dev/null
+
+# Download pre-trained models
+echo "→ Downloading openWakeWord models..."
+python3 -c "import openwakeword; openwakeword.utils.download_models()" 2>/dev/null || \
+  echo "  ⚠ Model download had issues — will retry on first run"
+
+deactivate
 
 # ── npm dependencies ─────────────────────────────
 echo ""
@@ -42,7 +59,15 @@ if [ ! -f .env ]; then
   echo "     nano $(pwd)/.env"
 fi
 
-# ── ALSA config hint ─────────────────────────────
+# ── Test audio devices ───────────────────────────
+echo ""
+echo "→ Checking audio devices..."
+echo "  Playback devices:"
+aplay -l 2>/dev/null | grep "^card" || echo "  (none found)"
+echo "  Capture devices:"
+arecord -l 2>/dev/null | grep "^card" || echo "  (none found — you need a USB mic!)"
+
+# ── Summary ──────────────────────────────────────
 echo ""
 echo "────────────────────────────────────────────"
 echo "  Installation complete!"
@@ -50,14 +75,13 @@ echo ""
 echo "  Next steps:"
 echo "  1. Edit .env with your OpenAI API key"
 echo "  2. Add the module to your MagicMirror config"
-echo "  3. (Optional) Configure ALSA default mic:"
+echo "  3. Make sure your ~/.asoundrc is configured"
 echo ""
-echo "     Create/edit ~/.asoundrc:"
-echo "     pcm.!default {"
-echo "       type asym"
-echo "       playback.pcm \"plughw:0,0\""
-echo "       capture.pcm \"plughw:1,0\""
-echo "     }"
+echo "  Wake word: 'Hey Jarvis' (default)"
+echo "  Available models: hey_jarvis, alexa,"
+echo "    hey_mycroft, hey_rhasspy"
 echo ""
-echo "  4. Test your mic:  arecord -d 3 test.wav && aplay test.wav"
+echo "  Test wake word standalone:"
+echo "    source $(pwd)/venv/bin/activate"
+echo "    python3 $(pwd)/wake_word_service.py --debug"
 echo "────────────────────────────────────────────"
