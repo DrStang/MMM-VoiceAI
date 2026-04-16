@@ -1,22 +1,32 @@
 /* MMM-VoiceAI
  * MagicMirror² module for voice-activated OpenAI interaction.
- * Wake word: "Hey Mirror" (customizable)
+ * Wake word: "Hey Jarvis" via openWakeWord (local, free)
  * Flow: Wake word → Record prompt → Whisper STT → GPT Chat → TTS → Playback + Transcript
  */
 
 Module.register("MMM-VoiceAI", {
   defaults: {
-    wakeWord: "hey mirror",
-    wakeWordSensitivity: 0.7,
+    // ── openWakeWord (local, zero cost) ──
+    wakeWordModel: "hey_jarvis",      // hey_jarvis, alexa, hey_mycroft, hey_rhasspy, or path to .tflite/.onnx
+    wakeWordThreshold: 0.5,           // 0.0–1.0, higher = less sensitive
+    wakeWordCooldown: 3.0,            // seconds between detections
+    wakeWordDebug: false,             // log scores to console
+    alsaCaptureDevice: null,          // e.g. "plughw:3,0" — null uses ALSA default
+
+    // ── OpenAI ──
     openaiModel: "gpt-4o-mini",
     ttsModel: "tts-1",
-    ttsVoice: "nova",
+    ttsVoice: "nova",                 // alloy, echo, fable, onyx, nova, shimmer
     whisperModel: "whisper-1",
     systemPrompt:
       "You are a helpful smart mirror assistant. Keep responses concise and conversational — ideally under 3 sentences unless the user asks for detail.",
     maxTokens: 300,
-    silenceTimeout: 2000,
-    maxRecordingTime: 30000,
+
+    // ── Recording ──
+    silenceTimeout: 2000,             // ms of silence before auto-stop
+    maxRecordingTime: 30000,          // hard limit on recording (ms)
+
+    // ── UI ──
     conversationHistory: 5,
     idleTimeout: 30000,
     showTranscription: true,
@@ -91,7 +101,6 @@ Module.register("MMM-VoiceAI", {
       this.sendSocketNotification("INIT", this.config);
     }
     if (notification === "MMM_VOICEAI_ACTIVATE") {
-      // Allow external modules to trigger recording
       this.sendSocketNotification("FORCE_ACTIVATE", {});
     }
   },
@@ -123,9 +132,7 @@ Module.register("MMM-VoiceAI", {
           assistant: payload.text,
           timestamp: Date.now(),
         });
-        if (
-          this.conversationLog.length > this.config.conversationHistory
-        ) {
+        if (this.conversationLog.length > this.config.conversationHistory) {
           this.conversationLog.shift();
         }
         this.updateDom(300);
@@ -152,9 +159,10 @@ Module.register("MMM-VoiceAI", {
   },
 
   _getStatusText() {
+    const wakePhrase = (this.config.wakeWordModel || "hey_jarvis").replace(/_/g, " ");
     const labels = {
       IDLE: "Initializing…",
-      LISTENING_WAKE: `Say "${this.config.wakeWord}" to start`,
+      LISTENING_WAKE: `Say "${wakePhrase}" to start`,
       RECORDING: "Listening… speak now",
       PROCESSING: "Thinking…",
       SPEAKING: "Responding…",
