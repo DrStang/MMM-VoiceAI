@@ -64,7 +64,10 @@ def main():
     else:
         oww_model = Model(wakeword_models=[model_arg])
 
-    model_names = list(oww_model.prediction_buffer.keys())
+    # models.keys() is reliable; prediction_buffer may be empty for custom models
+    model_names = list(oww_model.models.keys())
+    if not model_names:
+        model_names = list(oww_model.prediction_buffer.keys())
     print(f"INIT: Loaded models: {model_names}", file=sys.stderr)
 
     # ── Open audio stream via arecord (no pyaudio dependency) ──
@@ -116,7 +119,7 @@ def main():
 
             # Check all loaded models
             for model_name in model_names:
-                score = prediction[model_name]
+                score = prediction.get(model_name, 0) if isinstance(prediction, dict) else 0
 
                 if args.debug and score > 0.1:
                     print(f"DEBUG: {model_name} = {score:.4f}", file=sys.stderr)
