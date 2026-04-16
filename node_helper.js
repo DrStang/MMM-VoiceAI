@@ -253,96 +253,82 @@ module.exports = NodeHelper.create({
 
   // ─── Audio Recording ───────────────────────────────────────
 
+  // Records using arecord piped to raw stdout, monitors audio energy,
+  // and stops after silence is detected. Saves to WAV file.
   _recordWithSilenceDetection(outputPath) {
     return new Promise((resolve, reject) => {
-      const maxSec = Math.ceil(this.config.maxRecordingTime / 1000);
-      const silenceSec = (this.config.silenceTimeout / 1000).toFixed(1);
       const device = this.config.alsaCaptureDevice || "default";
+      const maxMs = this.config.maxRecordingTime || 30000;
+      const silenceMs = this.config.silenceTimeout || 2000;
+      const silenceThreshold = this.config.silenceThreshold || 500;
 
-      // Try sox (rec) first with explicit ALSA device
-      const env = { ...process.env, AUDIODEV: device };
+      console.log(`[MMM-VoiceAI] Recording with silence detection: device=${device}, silenceTimeout=${silenceMs}ms, maxTime=${maxMs}ms`);
 
-      const proc = spawn("rec", [
-        "-t", "alsa", device,   // explicit input device
-        outputPath,
-        "rate", "16000",
-        "channels", "1",
-        "silence",
-        "1", "0.1", "3%",      // start after sound
-        "1", silenceSec, "3%",  // stop after silence
-        "trim", "0", String(maxSec),
-      ], { env });
-
-      let fallback = false;
-      let stderrOutput = "";
-
-      proc.stderr.on("data", (data) => {
-        stderrOutput += data.toString();
-      });
-
-      proc.on("error", () => {
-        // rec not found, fall back to arecord
-        console.log("[MMM-VoiceAI] rec (sox) not found, using arecord fallback");
-        fallback = true;
-        this._recordAudio(outputPath, this.config.maxRecordingTime)
-          .then(resolve)
-          .catch(reject);
-      });
-
-      proc.on("close", (code) => {
-        if (fallback) return;
-
-        if (code !== 0 || !fs.existsSync(outputPath)) {
-          console.log(`[MMM-VoiceAI] rec failed (code=${code}), falling back to arecord`);
-          if (stderrOutput) console.log(`[MMM-VoiceAI] rec stderr: ${stderrOutput.trim()}`);
-          // Fall back to arecord
-          this._recordAudio(outputPath, this.config.maxRecordingTime)
-            .then(resolve)
-            .catch(reject);
-        } else {
-          console.log(`[MMM-VoiceAI] Recording saved: ${outputPath}`);
-          resolve(outputPath);
-        }
-      });
-
-      setTimeout(() => {
-        proc.kill("SIGTERM");
-      }, this.config.maxRecordingTime + 2000);
-    });
-  },
-
-  _recordAudio(outputPath, durationMs) {
-    return new Promise((resolve, reject) => {
-      const seconds = Math.ceil(durationMs / 1000);
-      const device = this.config.alsaCaptureDevice || "default";
-
-      console.log(`[MMM-VoiceAI] arecord: device=${device}, duration=${seconds}s, output=${outputPath}`);
-
+      // Record raw PCM to stdout so we can monitor energy levels
       const proc = spawn("arecord", [
         "-D", device,
         "-f", "S16_LE",
         "-r", "16000",
         "-c", "1",
-        "-t", "wav",
-        "-d", String(seconds),
-        outputPath,
+        "-t", "raw",
       ]);
 
+      const chunks = [];
+      let totalBytes = 0;
+      let lastSoundTime = Date.now();
+      let hasHeardSpeech = false;
       let stderrOutput = "";
+
       proc.stderr.on("data", (data) => {
         stderrOutput += data.toString();
       });
 
-      proc.on("close", (code) => {
-        console.log(`[MMM-VoiceAI] arecord exited code=${code}, file exists=${fs.existsSync(outputPath)}`);
-        if (stderrOutput) console.log(`[MMM-VoiceAI] arecord stderr: ${stderrOutput.trim()}`);
+      proc.stdout.on("data", (data) => {
+        chunks.push(data);
+        totalBytes += data.length;
 
-        if (fs.existsSync(outputPath)) {
-          const stat = fs.statSync(outputPath);
-          console.log(`[MMM-VoiceAI] Recording size: ${stat.size} bytes`);
+        // Calculate RMS energy of this chunk (16-bit signed samples)
+        let energy = 0;
+        const samples = data.length / 2;
+        for (let i = 0; i < data.length - 1; i += 2) {
+          const sample = data.readInt16LE(i);
+          energy += sample * sample;
+        }
+        const rms = Math.sqrt(energy / samples);
+
+        if (rms > silenceThreshold) {
+          lastSoundTime = Date.now();
+          if (!hasHeardSpeech) {
+            hasHeardSpeech = true;
+            console.log(`[MMM-VoiceAI] Speech detected (RMS=${rms.toFixed(0)})`);
+          }
+        }
+
+        const now = Date.now();
+
+        // Stop if we heard speech and then silence for silenceTimeout
+        if (hasHeardSpeech && (now - lastSoundTime > silenceMs)) {
+          console.log(`[MMM-VoiceAI] Silence detected after speech, stopping recording`);
+          proc.kill("SIGTERM");
+        }
+      });
+
+      proc.on("close", () => {
+        if (totalBytes === 0) {
+          if (stderrOutput) console.log(`[MMM-VoiceAI] arecord stderr: ${stderrOutput.trim()}`);
+          return reject(new Error("Recording captured no audio"));
+        }
+
+        // Write raw PCM data as a proper WAV file
+        try {
+          const pcmData = Buffer.concat(chunks);
+          const wavHeader = this._createWavHeader(pcmData.length, 16000, 1, 16);
+          fs.writeFileSync(outputPath, Buffer.concat([wavHeader, pcmData]));
+          const durationSec = (pcmData.length / (16000 * 2)).toFixed(1);
+          console.log(`[MMM-VoiceAI] Recording saved: ${outputPath} (${durationSec}s, ${pcmData.length} bytes)`);
           resolve(outputPath);
-        } else {
-          reject(new Error(`arecord failed (code ${code}): ${stderrOutput.trim()}`));
+        } catch (err) {
+          reject(new Error(`Failed to write WAV: ${err.message}`));
         }
       });
 
@@ -350,10 +336,34 @@ module.exports = NodeHelper.create({
         reject(new Error(`arecord not found: ${err.message}`));
       });
 
+      // Hard timeout
       setTimeout(() => {
+        console.log("[MMM-VoiceAI] Max recording time reached, stopping");
         proc.kill("SIGTERM");
-      }, durationMs + 500);
+      }, maxMs);
     });
+  },
+
+  _createWavHeader(dataSize, sampleRate, channels, bitsPerSample) {
+    const header = Buffer.alloc(44);
+    const byteRate = sampleRate * channels * (bitsPerSample / 8);
+    const blockAlign = channels * (bitsPerSample / 8);
+
+    header.write("RIFF", 0);
+    header.writeUInt32LE(36 + dataSize, 4);
+    header.write("WAVE", 8);
+    header.write("fmt ", 12);
+    header.writeUInt32LE(16, 16);           // subchunk size
+    header.writeUInt16LE(1, 20);            // PCM format
+    header.writeUInt16LE(channels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitsPerSample, 34);
+    header.write("data", 36);
+    header.writeUInt32LE(dataSize, 40);
+
+    return header;
   },
 
   // ─── OpenAI: Whisper STT ───────────────────────────────────
