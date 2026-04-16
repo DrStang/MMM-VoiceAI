@@ -36,7 +36,9 @@ source "$VENV_DIR/bin/activate"
 
 echo "→ Installing openWakeWord and dependencies..."
 pip install --upgrade pip setuptools wheel 2>/dev/null
-pip install openwakeword numpy 2>/dev/null
+pip install openwakeword --no-deps
+pip install tflite-runtime numpy
+
 
 # Download pre-trained models
 echo "→ Downloading openWakeWord models..."
