@@ -50,9 +50,9 @@ module.exports = NodeHelper.create({
     const envFile = path.join(__dirname, ".env");
     if (fs.existsSync(envFile)) {
       const content = fs.readFileSync(envFile, "utf8");
-      const match = content.match(/OPENAI_API_KEY=(.+)/);
+      const match = content.match(/OPENAI_API_KEY\s*=\s*(.+)/);
       if (match) {
-        this.apiKey = match[1].trim();
+        this.apiKey = match[1].trim().replace(/^["']|["']$/g, "");
         return;
       }
     }
