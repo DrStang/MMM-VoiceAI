@@ -257,23 +257,32 @@ module.exports = NodeHelper.create({
     return new Promise((resolve, reject) => {
       const maxSec = Math.ceil(this.config.maxRecordingTime / 1000);
       const silenceSec = (this.config.silenceTimeout / 1000).toFixed(1);
+      const device = this.config.alsaCaptureDevice || "default";
 
-      // Use sox (rec) for silence-based recording stop
+      // Try sox (rec) first with explicit ALSA device
+      const env = { ...process.env, AUDIODEV: device };
+
       const proc = spawn("rec", [
+        "-t", "alsa", device,   // explicit input device
         outputPath,
         "rate", "16000",
         "channels", "1",
         "silence",
-        "1", "0.1", "3%",    // start after sound
-        "1", silenceSec, "3%", // stop after silence
+        "1", "0.1", "3%",      // start after sound
+        "1", silenceSec, "3%",  // stop after silence
         "trim", "0", String(maxSec),
-      ]);
+      ], { env });
 
       let fallback = false;
+      let stderrOutput = "";
+
+      proc.stderr.on("data", (data) => {
+        stderrOutput += data.toString();
+      });
 
       proc.on("error", () => {
-        // sox not available, fall back to arecord
-        console.log("[MMM-VoiceAI] sox not found, using arecord fallback");
+        // rec not found, fall back to arecord
+        console.log("[MMM-VoiceAI] rec (sox) not found, using arecord fallback");
         fallback = true;
         this._recordAudio(outputPath, this.config.maxRecordingTime)
           .then(resolve)
@@ -281,12 +290,18 @@ module.exports = NodeHelper.create({
       });
 
       proc.on("close", (code) => {
-        if (!fallback) {
-          if (fs.existsSync(outputPath)) {
-            resolve(outputPath);
-          } else {
-            reject(new Error("Recording produced no file"));
-          }
+        if (fallback) return;
+
+        if (code !== 0 || !fs.existsSync(outputPath)) {
+          console.log(`[MMM-VoiceAI] rec failed (code=${code}), falling back to arecord`);
+          if (stderrOutput) console.log(`[MMM-VoiceAI] rec stderr: ${stderrOutput.trim()}`);
+          // Fall back to arecord
+          this._recordAudio(outputPath, this.config.maxRecordingTime)
+            .then(resolve)
+            .catch(reject);
+        } else {
+          console.log(`[MMM-VoiceAI] Recording saved: ${outputPath}`);
+          resolve(outputPath);
         }
       });
 
@@ -299,33 +314,45 @@ module.exports = NodeHelper.create({
   _recordAudio(outputPath, durationMs) {
     return new Promise((resolve, reject) => {
       const seconds = Math.ceil(durationMs / 1000);
-      const args = [
+      const device = this.config.alsaCaptureDevice || "default";
+
+      console.log(`[MMM-VoiceAI] arecord: device=${device}, duration=${seconds}s, output=${outputPath}`);
+
+      const proc = spawn("arecord", [
+        "-D", device,
         "-f", "S16_LE",
         "-r", "16000",
         "-c", "1",
         "-t", "wav",
         "-d", String(seconds),
         outputPath,
-      ];
+      ]);
 
-      // Use configured ALSA device if set
-      if (this.config.alsaCaptureDevice) {
-        args.unshift("-D", this.config.alsaCaptureDevice);
-      }
-
-      const proc = spawn("arecord", args);
+      let stderrOutput = "";
+      proc.stderr.on("data", (data) => {
+        stderrOutput += data.toString();
+      });
 
       proc.on("close", (code) => {
-        if (code === 0 || fs.existsSync(outputPath)) {
+        console.log(`[MMM-VoiceAI] arecord exited code=${code}, file exists=${fs.existsSync(outputPath)}`);
+        if (stderrOutput) console.log(`[MMM-VoiceAI] arecord stderr: ${stderrOutput.trim()}`);
+
+        if (fs.existsSync(outputPath)) {
+          const stat = fs.statSync(outputPath);
+          console.log(`[MMM-VoiceAI] Recording size: ${stat.size} bytes`);
           resolve(outputPath);
         } else {
-          reject(new Error(`arecord exited with code ${code}`));
+          reject(new Error(`arecord failed (code ${code}): ${stderrOutput.trim()}`));
         }
       });
 
-      proc.on("error", reject);
+      proc.on("error", (err) => {
+        reject(new Error(`arecord not found: ${err.message}`));
+      });
 
-      setTimeout(() => proc.kill("SIGTERM"), durationMs + 500);
+      setTimeout(() => {
+        proc.kill("SIGTERM");
+      }, durationMs + 500);
     });
   },
 
