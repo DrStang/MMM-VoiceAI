@@ -1,45 +1,50 @@
 # MMM-VoiceAI
 
-A MagicMirror² module that adds a voice-activated AI assistant powered by OpenAI. Say **"Hey Mirror"** to activate, speak your question, and get a spoken response with on-screen transcription.
+A MagicMirror² module that adds a voice-activated AI assistant powered by OpenAI. Say **"Hey Jarvis"** to activate, speak your question, and get a spoken response with on-screen transcription.
+
+Wake word detection runs **locally** via [openWakeWord](https://github.com/dscripka/openWakeWord) — zero API cost, low CPU. Only the actual voice interaction (transcription, chat, speech) hits OpenAI.
 
 ## How It Works
 
 ```
-┌─────────────┐     ┌──────────┐     ┌──────────┐     ┌─────────┐
-│ "Hey Mirror" │ ──→ │ Record   │ ──→ │ Whisper  │ ──→ │ GPT-4o  │
-│ Wake Word    │     │ Prompt   │     │ STT      │     │ mini    │
-└─────────────┘     └──────────┘     └──────────┘     └────┬────┘
-                                                           │
-                    ┌──────────┐     ┌──────────┐          │
-                    │ Speaker  │ ←── │ TTS      │ ←────────┘
-                    │ Playback │     │ Voice    │
-                    └──────────┘     └──────────┘
+┌──────────────┐     ┌──────────┐     ┌──────────┐     ┌─────────┐
+│ "Hey Jarvis"  │ ──→ │ Record   │ ──→ │ Whisper  │ ──→ │ GPT-4o  │
+│ openWakeWord  │     │ Prompt   │     │ STT      │     │ mini    │
+│ (local/free)  │     │ (sox)    │     │ (API)    │     │ (API)   │
+└──────────────┘     └──────────┘     └──────────┘     └────┬────┘
+                                                            │
+                     ┌──────────┐     ┌──────────┐         │
+                     │ Speaker  │ ←── │ TTS      │ ←───────┘
+                     │ Playback │     │ (API)    │
+                     └──────────┘     └──────────┘
 ```
-
-**Pipeline:** Wake word detection → Audio recording with silence detection → Whisper transcription → GPT chat completion → TTS voice synthesis → Audio playback + on-screen transcript
 
 ## Requirements
 
 - Raspberry Pi 3B+ or newer (Pi 4/5 recommended)
-- USB microphone or USB sound card with mic input
-- Speaker (3.5mm, HDMI, or USB)
+- USB microphone
+- Speaker (HDMI, 3.5mm, or USB)
 - MagicMirror² installed and running
-- OpenAI API key with access to Whisper, Chat, and TTS APIs
+- OpenAI API key (for Whisper, Chat, and TTS)
 - Internet connection
+- Python 3.7+
 
 ## Installation
 
 ```bash
 cd ~/MagicMirror/modules
-git clone https://github.com/yourusername/MMM-VoiceAI.git  # or copy files manually
+git clone https://github.com/yourusername/MMM-VoiceAI.git
 cd MMM-VoiceAI
+chmod +x install.sh
 bash install.sh
 ```
 
 The installer will:
 1. Install system audio packages (`alsa-utils`, `sox`, `mpv`, `ffmpeg`)
-2. Install Node.js dependencies
-3. Create a `.env` file for your API key
+2. Create a Python venv and install openWakeWord
+3. Download pre-trained wake word models
+4. Install Node.js dependencies
+5. Create a `.env` file for your API key
 
 ### Set Your API Key
 
@@ -47,27 +52,22 @@ The installer will:
 nano ~/MagicMirror/modules/MMM-VoiceAI/.env
 ```
 
-Replace `sk-your-api-key-here` with your actual OpenAI API key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
+Replace `sk-your-api-key-here` with your OpenAI API key.
 
 ## MagicMirror Configuration
 
-Add to your `~/MagicMirror/config/config.js`:
+Add to `~/MagicMirror/config/config.js`:
 
 ```js
 {
   module: "MMM-VoiceAI",
-  position: "bottom_center",  // or any position
+  position: "bottom_center",
   config: {
-    wakeWord: "hey mirror",          // Wake phrase (spoken naturally)
-    openaiModel: "gpt-4o-mini",      // Chat model
-    ttsVoice: "nova",                // TTS voice: alloy, echo, fable, onyx, nova, shimmer
-    systemPrompt: "You are a helpful smart mirror assistant. Keep responses concise.",
-    maxTokens: 300,                  // Max response length
-    silenceTimeout: 2000,            // ms of silence before stopping recording
-    maxRecordingTime: 30000,         // Max recording duration (ms)
-    conversationHistory: 5,          // Number of exchanges to remember
-    showTranscription: true,         // Show text on screen
-    idleTimeout: 30000,              // Clear transcript after this long (ms)
+    wakeWordModel: "hey_jarvis",   // or: alexa, hey_mycroft, hey_rhasspy
+    wakeWordThreshold: 0.5,        // 0.0–1.0, higher = less sensitive
+    openaiModel: "gpt-4o-mini",
+    ttsVoice: "nova",              // alloy, echo, fable, onyx, nova, shimmer
+    showTranscription: true,
   }
 },
 ```
@@ -76,93 +76,106 @@ Add to your `~/MagicMirror/config/config.js`:
 
 | Option | Default | Description |
 |---|---|---|
-| `wakeWord` | `"hey mirror"` | Phrase to activate recording |
-| `openaiModel` | `"gpt-4o-mini"` | OpenAI chat model |
+| **Wake Word (local)** | | |
+| `wakeWordModel` | `"hey_jarvis"` | Model name or path to custom `.tflite`/`.onnx` |
+| `wakeWordThreshold` | `0.5` | Detection threshold (0.0–1.0) |
+| `wakeWordCooldown` | `3.0` | Seconds between detections |
+| `wakeWordDebug` | `false` | Log detection scores to console |
+| `alsaCaptureDevice` | `null` | ALSA device (e.g. `"plughw:3,0"`), null = default |
+| **OpenAI** | | |
+| `openaiModel` | `"gpt-4o-mini"` | Chat model |
 | `ttsModel` | `"tts-1"` | TTS model (`tts-1` or `tts-1-hd`) |
 | `ttsVoice` | `"nova"` | Voice: alloy, echo, fable, onyx, nova, shimmer |
 | `whisperModel` | `"whisper-1"` | Whisper STT model |
-| `systemPrompt` | *(see above)* | System prompt for GPT personality |
+| `systemPrompt` | *(see code)* | System prompt for GPT personality |
 | `maxTokens` | `300` | Maximum response tokens |
+| **Recording** | | |
 | `silenceTimeout` | `2000` | Silence (ms) before auto-stop recording |
-| `maxRecordingTime` | `30000` | Hard limit on recording duration (ms) |
-| `conversationHistory` | `5` | Exchanges to keep in context |
+| `maxRecordingTime` | `30000` | Hard limit on recording (ms) |
+| **UI** | | |
+| `conversationHistory` | `5` | Exchanges kept in context |
 | `showTranscription` | `true` | Display transcript on mirror |
-| `idleTimeout` | `30000` | Clear transcript after idle period (ms) |
+| `idleTimeout` | `30000` | Clear transcript after idle (ms) |
+
+## Available Wake Word Models
+
+openWakeWord ships with several pre-trained models:
+
+| Model | Wake Phrase |
+|---|---|
+| `hey_jarvis` | "Hey Jarvis" |
+| `alexa` | "Alexa" |
+| `hey_mycroft` | "Hey Mycroft" |
+| `hey_rhasspy` | "Hey Rhasspy" |
+
+You can also train custom models — see the [openWakeWord docs](https://github.com/dscripka/openWakeWord).
+
+## Testing Wake Word Standalone
+
+```bash
+cd ~/MagicMirror/modules/MMM-VoiceAI
+source venv/bin/activate
+python3 wake_word_service.py --debug
+```
+
+You should see `READY` and then score values when you speak. Say "Hey Jarvis" and look for `WAKE_DETECTED` in the output.
 
 ## Audio Setup (Raspberry Pi)
 
-### Find Your Devices
+### ALSA Config (~/.asoundrc)
 
-```bash
-# List recording devices
-arecord -l
-
-# List playback devices
-aplay -l
-```
-
-### Configure Default Devices
-
-Create or edit `~/.asoundrc`:
+Example for GeeekPi HDMI display + USB mic:
 
 ```
 pcm.!default {
   type asym
-  playback.pcm "plughw:0,0"
-  capture.pcm "plughw:1,0"
+  playback.pcm "sysdefault:CARD=vc4hdmi0"
+  capture.pcm "plughw:CARD=Device,DEV=0"
+}
+
+ctl.!default {
+  type hw
+  card vc4hdmi0
 }
 ```
-
-Adjust card/device numbers to match your hardware from the `arecord -l` / `aplay -l` output.
 
 ### Test Audio
 
 ```bash
-# Record 3 seconds
-arecord -f S16_LE -r 16000 -c 1 -d 3 test.wav
+# Record 3 seconds from USB mic
+arecord -f S16_LE -r 16000 -c 1 -d 3 /tmp/test.wav
 
-# Play it back
-aplay test.wav
+# Play through HDMI speakers
+aplay -D sysdefault:CARD=vc4hdmi0 /tmp/test.wav
 ```
 
 ## Visual States
 
-The module displays an animated orb that changes color/behavior based on state:
-
 | State | Orb Color | Behavior |
 |---|---|---|
-| **Listening** | Blue pulse | Waiting for "Hey Mirror" |
+| **Listening** | Blue pulse | Waiting for wake word |
 | **Recording** | Cyan glow + waveform | Capturing your voice |
 | **Processing** | Amber spin | Sending to OpenAI |
 | **Speaking** | Green + waveform | Playing AI response |
 
-## API Cost Estimates
+## API Cost
 
-Per interaction (approximate, as of 2025):
-- Whisper STT: ~$0.006/minute of audio
-- GPT-4o-mini: ~$0.00015 per 1K input tokens, $0.0006 per 1K output tokens
+Wake word detection is **free** (runs locally). Per voice interaction:
+- Whisper STT: ~$0.006/min
+- GPT-4o-mini: ~$0.001 per exchange
 - TTS: ~$0.015 per 1K characters
 
-A typical exchange costs roughly **$0.01–0.03**. The wake word detection loop uses short 2-second Whisper calls which add ~$0.0002 each — at one check every ~3 seconds, that's about **$0.24/hour** of idle listening.
-
-### Reducing Wake Word Costs
-
-For heavy use, consider replacing the Whisper-based wake word loop with a local keyword spotter:
-- **Porcupine** (Picovoice) — free tier, very accurate, custom wake words
-- **openWakeWord** — fully open-source, runs on Pi
-- **Snowboy** (archived but functional)
+A typical exchange costs roughly **$0.01–0.03**.
 
 ## Troubleshooting
 
-**No microphone detected:** Make sure a USB mic is plugged in. Run `arecord -l` to verify.
+**openWakeWord won't start:** Make sure the venv exists: `ls modules/MMM-VoiceAI/venv/bin/python3`. If not, re-run `bash install.sh`.
 
-**"No API key" error:** Check that `.env` exists in the module folder and contains a valid key.
+**Wake word not detecting:** Run with `--debug` flag to see scores. Try lowering `wakeWordThreshold` to `0.3`. Make sure your mic is working: `arecord -d 3 /tmp/test.wav`.
 
-**Audio plays but no recording works:** Your ALSA default may point to the wrong capture device. Edit `~/.asoundrc`.
+**No sound from speakers:** Check your `.asoundrc` playback device. Test with `speaker-test -D sysdefault:CARD=vc4hdmi0 -t wav`.
 
-**sox/rec not found warnings:** The module falls back to `arecord` with a fixed timeout. Install sox for silence-based auto-stop: `sudo apt-get install sox`
-
-**Wake word not detecting:** Speak clearly and naturally. You can adjust `wakeWord` to something your mic picks up more reliably. Check the MagicMirror logs for what Whisper is hearing: `pm2 logs MagicMirror`
+**HDMI audio not working:** Make sure HDMI audio is enabled: `sudo raspi-config` → System Options → Audio → HDMI.
 
 ## License
 
