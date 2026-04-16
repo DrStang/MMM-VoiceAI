@@ -69,9 +69,16 @@ module.exports = NodeHelper.create({
     }
 
     const scriptPath = path.join(__dirname, "wake_word_service.py");
+    
+    // Resolve model path - if it's just a filename, look in the module dir
+    let modelPath = this.config.wakeWordModel || "hey_jarvis";
+    if (!path.isAbsolute(modelPath) && (modelPath.endsWith(".tflite") || modelPath.endsWith(".onnx"))) {
+      modelPath = path.join(__dirname, modelPath);
+    }
+    
     const args = [
       scriptPath,
-      "--model", this.config.wakeWordModel || "hey_jarvis",
+      "--model", modelPath,
       "--threshold", String(this.config.wakeWordThreshold || 0.5),
       "--cooldown", String(this.config.wakeWordCooldown || 3.0),
     ];
@@ -96,7 +103,10 @@ module.exports = NodeHelper.create({
       cwd: __dirname,
       env: { ...process.env },
       detached: true,
+      stdio: ["pipe", "pipe", "pipe"],
     });
+
+    console.log(`[MMM-VoiceAI] Wake word PID: ${this.wakeWordProcess.pid}`);
 
     // ── Handle stdout (detection events) ──
     let lineBuffer = "";
