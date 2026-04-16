@@ -36,7 +36,7 @@ source "$VENV_DIR/bin/activate"
 
 echo "→ Installing openWakeWord and dependencies..."
 pip install --upgrade pip setuptools wheel 2>/dev/null
-pip install openwakeword --no-deps
+pip install openwakeword --no-deps --force-reinstall
 pip install tflite-runtime numpy
 
 
