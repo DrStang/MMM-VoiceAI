@@ -91,9 +91,11 @@ module.exports = NodeHelper.create({
 
     console.log(`[MMM-VoiceAI] Starting openWakeWord: ${pythonBin} ${args.join(" ")}`);
 
+    this._autoRestart = true;
     this.wakeWordProcess = spawn(pythonBin, args, {
       cwd: __dirname,
       env: { ...process.env },
+      detached: true,
     });
 
     // ── Handle stdout (detection events) ──
@@ -138,8 +140,8 @@ module.exports = NodeHelper.create({
       console.log(`[MMM-VoiceAI] openWakeWord process exited with code ${code}`);
       this.wakeWordProcess = null;
 
-      // Auto-restart after a delay (unless module is stopping)
-      if (this.config && code !== null) {
+      // Auto-restart after a delay (unless deliberately stopped)
+      if (this.config && this._autoRestart !== false) {
         console.log("[MMM-VoiceAI] Restarting openWakeWord in 5s...");
         setTimeout(() => this._startWakeWordService(), 5000);
       }
@@ -153,23 +155,41 @@ module.exports = NodeHelper.create({
     });
   },
 
-  // ─── Pause/Resume wake word during interaction ─────────────
+  // ─── Stop/Restart wake word during interaction ─────────────
 
-  _pauseWakeWord() {
-    // Send SIGSTOP to pause the arecord subprocess inside the Python script
-    if (this.wakeWordProcess && this.wakeWordProcess.pid) {
-      try {
-        process.kill(this.wakeWordProcess.pid, "SIGSTOP");
-      } catch (e) { /* ignore */ }
-    }
+  _stopWakeWord() {
+    return new Promise((resolve) => {
+      if (this.wakeWordProcess) {
+        this._autoRestart = false; // prevent auto-restart on close
+        const proc = this.wakeWordProcess;
+        
+        proc.on("close", () => {
+          this.wakeWordProcess = null;
+          // Small delay to ensure ALSA device is fully released
+          setTimeout(resolve, 300);
+        });
+
+        // Kill the entire process group (Python + arecord child)
+        try {
+          process.kill(-proc.pid, "SIGTERM");
+        } catch (e) {
+          try { proc.kill("SIGTERM"); } catch (e2) { /* ignore */ }
+        }
+
+        // Force kill after 1 second if still alive
+        setTimeout(() => {
+          try { proc.kill("SIGKILL"); } catch (e) { /* ignore */ }
+          resolve();
+        }, 1000);
+      } else {
+        resolve();
+      }
+    });
   },
 
-  _resumeWakeWord() {
-    if (this.wakeWordProcess && this.wakeWordProcess.pid) {
-      try {
-        process.kill(this.wakeWordProcess.pid, "SIGCONT");
-      } catch (e) { /* ignore */ }
-    }
+  _restartWakeWord() {
+    this._autoRestart = true;
+    this._startWakeWordService();
   },
 
   // ─── Voice Interaction Pipeline ────────────────────────────
@@ -178,8 +198,8 @@ module.exports = NodeHelper.create({
     if (this.isProcessing) return;
     this.isProcessing = true;
 
-    // Pause wake word listener to free the mic
-    this._pauseWakeWord();
+    // Kill wake word listener to free the mic
+    await this._stopWakeWord();
 
     this.sendSocketNotification("WAKE_WORD_DETECTED", {});
 
@@ -215,9 +235,9 @@ module.exports = NodeHelper.create({
       this.sendSocketNotification("ERROR", { message: err.message });
     }
 
-    // Resume wake word listener
+    // Restart wake word listener
     this.isProcessing = false;
-    this._resumeWakeWord();
+    this._restartWakeWord();
     this.sendSocketNotification("STATE_CHANGE", { state: "LISTENING_WAKE" });
   },
 
