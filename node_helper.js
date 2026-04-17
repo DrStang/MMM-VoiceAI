@@ -524,9 +524,10 @@ module.exports = NodeHelper.create({
 
   _playAudio(filePath) {
     return new Promise((resolve, reject) => {
+      const vol = this.config.ttsVolume || 200;
       const players = [
-        { cmd: "mpv", args: ["--no-video", "--really-quiet", filePath] },
-        { cmd: "ffplay", args: ["-nodisp", "-autoexit", "-loglevel", "quiet", filePath] },
+        { cmd: "mpv", args: ["--no-video", "--really-quiet", `--volume=${vol}`, filePath] },
+        { cmd: "ffplay", args: ["-nodisp", "-autoexit", "-loglevel", "quiet", "-volume", String(vol), filePath] },
         { cmd: "aplay", args: [filePath] },
       ];
 
