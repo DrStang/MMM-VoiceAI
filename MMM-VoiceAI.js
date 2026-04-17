@@ -159,7 +159,11 @@ Module.register("MMM-VoiceAI", {
   },
 
   _getStatusText() {
-    const wakePhrase = (this.config.wakeWordModel || "hey_jarvis").replace(/_/g, " ");
+    let wakePhrase = (this.config.wakeWordModel || "hey_jarvis")
+      .replace(/\.(tflite|onnx)$/i, "")  // strip file extension
+      .replace(/[-_]/g, " ")              // replace separators with spaces
+      .replace(/_?v\d+(\.\d+)?$/, "")     // strip version numbers like _v0.1
+      .replace(/\b\w/g, c => c.toUpperCase()); // title case
     const labels = {
       IDLE: "Initializing…",
       LISTENING_WAKE: `Say "${wakePhrase}" to start`,
